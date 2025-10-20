@@ -2,13 +2,11 @@ import simpy
 import random
 import statistics
 import json
+import itertools
 from typing import List, Dict, Any
 
 
 def load_params_from_json(json_file_path: str) -> Dict[str, Any]:
-    """
-    Load simulation parameters from a JSON file.
-    """
     with open(json_file_path, 'r', encoding='utf-8') as f:
         params = json.load(f)
     return params
@@ -16,8 +14,7 @@ def load_params_from_json(json_file_path: str) -> Dict[str, Any]:
 
 def run_simulation_with_params(params: Dict[str, Any]):
     """
-    Run the airport simulation with given parameters.
-    Encapsulates the original main logic but uses passed parameters.
+    Запуск симуляции с заданными параметрами.
     """
     wait_times = []
     service_stats = {
@@ -278,7 +275,8 @@ def run_simulation_with_params(params: Dict[str, Any]):
 
         # Генерация новых пассажиров
         while True:
-            yield env.timeout(random.expovariate(1.0 / passenger_arrival_rate)) # каждые passenger_arrival_rate минут приходит пассажир
+            yield env.timeout(random.expovariate(
+                1.0 / passenger_arrival_rate))  # каждые passenger_arrival_rate минут приходит пассажир
             env.process(passenger_journey(env, passenger_id, airport))
             passenger_id += 1
 
@@ -326,46 +324,123 @@ def run_simulation_with_params(params: Dict[str, Any]):
     return stats, params
 
 
-def print_statistics(stats, params):
-    """Вывод статистики"""
-    if stats is None:
-        print("Недостаточно данных для статистики")
-        return
+def generate_grid_search_params(base_params: Dict[str, Any], grid_params: Dict[str, List]) -> List[Dict[str, Any]]:
+    """
+    Генерирует список параметров для grid search на базе base_config.
+    """
+    keys, values = zip(*grid_params.items())
+    combinations = [dict(zip(keys, v)) for v in itertools.product(*values)]
 
-    print("\n" + "=" * 60)
-    print("РЕЗУЛЬТАТЫ МОДЕЛИРОВАНИЯ АЭРОПОРТА")
-    print("=" * 60)
+    param_list = []
+    for combo in combinations:
+        params = json.loads(json.dumps(base_params))  # копия
+        _update_params_recursive(params, combo)
+        param_list.append(params)
 
-    mins, secs = divmod(stats['avg_wait_time'], 1)
-    secs = secs * 60
-    print(f"\nСреднее время пребывания пассажира: {int(mins)} мин {int(secs)} сек")
-    print(f"Среднее число пассажиров в системе: {stats['avg_passengers_in_system']:.2f}")
-    print(f"Обслужено пассажиров: {stats['served_passengers']}")
-    print(f"Не обслужено пассажиров: {stats['rejected_passengers']}")
-    print(f"  - из них ушедших по таймауту (>{params.get('max_time', 180)} мин): {stats['timeout_passengers']}")
-    print(f"\nАбсолютная пропускная способность: {stats['absolute_throughput']:.2f} пасс/час")
-    print(f"Относительная пропускная способность: {stats['relative_throughput']:.2%}")
+    return param_list
 
-    print("\nКоэффициенты использования ресурсов:")
-    for service, util in stats['utilization'].items():
-        print(f"  {service:15s}: {util:.2%}")
+
+def _update_params_recursive(target: Dict, updates: Dict):
+    """
+    Обновляет параметры для заданного dict.
+    """
+    for key, value in updates.items():
+        if key in target and isinstance(target[key], dict) and isinstance(value, dict):
+            _update_params_recursive(target[key], value)
+        else:
+            target[key] = value
+
+
+def run_grid_search(base_config_path: str, grid_config_path: str, num_runs_per_config: int = 1):
+    """
+    Запуск grid search по параметру заданному в grid_config_path,
+    используя base_config_path как базу. Каждая конфигурация запускается num_runs_per_config раз.
+    """
+    base_params = load_params_from_json(base_config_path)
+    grid_params = load_params_from_json(grid_config_path)
+
+    param_combinations = generate_grid_search_params(base_params, grid_params)
+    results = []
+    total_configs = len(param_combinations)
+    print(f"Запуск grid search с {total_configs} настройками...")
+
+    for i, params in enumerate(param_combinations):
+        print(f"\n--- Запуск конфигурации {i + 1}/{total_configs} ---")
+        print(f"Параметры: {params}")
+        config_results = {'parameters': params, 'runs': []}
+
+        for run_num in range(num_runs_per_config):
+            print(f"  Запуск {run_num + 1}/{num_runs_per_config}")
+            try:
+                stats, used_params = run_simulation_with_params(params)
+                config_results['runs'].append({
+                    'run_id': run_num + 1,
+                    'statistics': stats
+                })
+            except Exception as e:
+                print(f"    Ошибка в симуляции с конфигурацией {i + 1}, запуск {run_num + 1}: {e}")
+                config_results['runs'].append({
+                    'run_id': run_num + 1,
+                    'error': str(e)
+                })
+
+        results.append(config_results)
+
+    # Средние для каждой конфигурации
+    averaged_results = []
+    for config_result in results:
+        avg_stats = None
+        runs_with_stats = [r for r in config_result['runs'] if 'statistics' in r and r['statistics'] is not None]
+
+        if runs_with_stats:
+            first_run_stats = runs_with_stats[0]['statistics']
+            avg_stats = {}
+            for key, value in first_run_stats.items():
+                if isinstance(value, (int, float)):
+                    avg_val = statistics.mean(
+                        [r['statistics'][key] for r in runs_with_stats if r['statistics'] is not None])
+                    avg_stats[key] = avg_val
+                elif isinstance(value, dict):
+                    avg_dict = {}
+                    for sub_key, sub_value in value.items():
+                        if isinstance(sub_value, (int, float)):
+                            avg_sub_val = statistics.mean(
+                                [r['statistics'][key][sub_key] for r in runs_with_stats if r['statistics'] is not None])
+                            avg_dict[sub_key] = avg_sub_val
+                        else:
+                            avg_dict[sub_key] = sub_value
+                    avg_stats[key] = avg_dict
+                else:
+                    avg_stats[key] = value
+
+        averaged_results.append({
+            'parameters': config_result['parameters'],
+            'averaged_statistics': avg_stats,
+            'individual_runs': config_result['runs']
+        })
+
+    # Сохранение
+    output_file = "grid_search_results.json"
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(averaged_results, f, indent=2, ensure_ascii=False)
+    print(f"\nGrid search results saved to '{output_file}'")
+    return averaged_results
 
 
 def run_batch_experiments(json_file_path: str):
     """
-    Run multiple experiments from a batch JSON file.
-    The batch file should contain a list of parameter dictionaries.
+    Запуск экспериментов из batch json.
     """
     with open(json_file_path, 'r', encoding='utf-8') as f:
         batch_params = json.load(f)
 
     if not isinstance(batch_params, list):
-        print("Error: Batch JSON file must contain a list of parameter dictionaries.")
+        print("Error: Batch JSON должен иметь список словарей параметров.")
         return
 
     results = []
     for i, params in enumerate(batch_params):
-        print(f"\n--- Running Experiment {i + 1}/{len(batch_params)} ---")
+        print(f"\n--- Запуск эксперимента {i + 1}/{len(batch_params)} ---")
         try:
             stats, used_params = run_simulation_with_params(params)
             results.append({
@@ -373,16 +448,14 @@ def run_batch_experiments(json_file_path: str):
                 'parameters': used_params,
                 'statistics': stats
             })
-            print_statistics(stats, used_params)
         except Exception as e:
-            print(f"Error running experiment {i + 1}: {e}")
+            print(f"Ошибка при выполнении эксперимента {i + 1}: {e}")
             results.append({
                 'experiment_id': i + 1,
                 'parameters': params,
                 'error': str(e)
             })
 
-    # Optionally, save results to a file
     output_file = "batch_results.json"
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
@@ -390,25 +463,66 @@ def run_batch_experiments(json_file_path: str):
 
 
 def main():
-    """Main function to run either a single simulation or batch experiments."""
     import sys
 
     if len(sys.argv) < 2:
-        print("Usage: python airport_simulation.py <config_file.json> [batch]")
-        print("  config_file.json: Path to the JSON configuration file")
-        print("  [batch]: Optional argument. If 'batch', runs batch experiments.")
+        print("Usage:")
+        print("  python airport_simulator.py single <config_file.json>")
+        print("  python airport_simulator.py batch <batch_config.json>")
+        print("  python airport_simulator.py grid <base_config.json> <grid_config.json> [num_runs_per_config]")
+        print("  - single: Run a single simulation.")
+        print("  - batch: Run a list of simulations from a batch file.")
+        print("  - grid: Run a grid search using base and grid config files.")
+        print("  - num_runs_per_config: Optional, number of runs per configuration for averaging (default 1).")
         sys.exit(1)
 
-    json_file_path = sys.argv[1]
-    is_batch = len(sys.argv) > 2 and sys.argv[2].lower() == 'batch'
+    command = sys.argv[1]
 
-    if is_batch:
-        run_batch_experiments(json_file_path)
-    else:
-        # Run a single simulation
+    if command == 'single':
+        if len(sys.argv) < 3:
+            print("Usage: python airport_simulator.py single <config_file.json>")
+            sys.exit(1)
+        json_file_path = sys.argv[2]
         params = load_params_from_json(json_file_path)
         stats, used_params = run_simulation_with_params(params)
-        print_statistics(stats, used_params)
+        print("\n" + "=" * 60)
+        print("РЕЗУЛЬТАТЫ МОДЕЛИРОВАНИЯ АЭРОПОРТА")
+        print("=" * 60)
+        if stats:
+            mins, secs = divmod(stats['avg_wait_time'], 1)
+            secs = secs * 60
+            print(f"\nСреднее время пребывания пассажира: {int(mins)} мин {int(secs)} сек")
+            print(f"Среднее число пассажиров в системе: {stats['avg_passengers_in_system']:.2f}")
+            print(f"Обслужено пассажиров: {stats['served_passengers']}")
+            print(f"Не обслужено пассажиров: {stats['rejected_passengers']}")
+            print(f"  - из них ушедших по таймауту: {stats['timeout_passengers']}")
+            print(f"\nАбсолютная пропускная способность: {stats['absolute_throughput']:.2f} пасс/час")
+            print(f"Относительная пропускная способность: {stats['relative_throughput']:.2%}")
+            print("\nКоэффициенты использования ресурсов:")
+            for service, util in stats['utilization'].items():
+                print(f"  {service:15s}: {util:.2%}")
+        else:
+            print("Недостаточно данных для статистики")
+
+    elif command == 'batch':
+        if len(sys.argv) < 3:
+            print("Usage: python airport_simulator.py batch <batch_config.json>")
+            sys.exit(1)
+        json_file_path = sys.argv[2]
+        run_batch_experiments(json_file_path)
+
+    elif command == 'grid':
+        if len(sys.argv) < 4:
+            print("Usage: python airport_simulator.py grid <base_config.json> <grid_config.json> [num_runs_per_config]")
+            sys.exit(1)
+        base_config_path = sys.argv[2]
+        grid_config_path = sys.argv[3]
+        num_runs = int(sys.argv[4]) if len(sys.argv) > 4 else 1
+        run_grid_search(base_config_path, grid_config_path, num_runs)
+
+    else:
+        print("Invalid command. Use 'single', 'batch', or 'grid'.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
