@@ -54,9 +54,9 @@ def plot_metric(results_data: Union[Dict, List[Dict]], metric: str, title: str =
         print(f"No data found for metric '{metric}'. Skipping plot.")
         return
 
-    fig, ax = plt.subplots(figsize=(16, 6))
+    fig, ax = plt.subplots(figsize=(10, 6))
     bars = ax.bar(range(len(x_labels)), y_values, tick_label=x_labels, color='steelblue', edgecolor='navy', linewidth=0.5)
-    ax.set_xlabel('Configuration (Index and Key Parameters)')
+    ax.set_xlabel('Конфигурация')
     ax.set_ylabel(metric.replace('_', ' ').title())
     ax.set_title(title or f'Plot of {metric.replace("_", " ").title()}')
     ax.bar_label(bars)
@@ -88,10 +88,10 @@ def plot_resource_utilization(results_data: Union[Dict, List[Dict]], save_path: 
     util_values = [util_data[res] for res in resources]
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    bars = ax.bar(resources, util_values, color='lightcoral', edgecolor='darkred', linewidth=0.7)
-    ax.set_xlabel('Resource')
-    ax.set_ylabel('Utilization Rate')
-    ax.set_title('Resource Utilization Rates (First Configuration)')
+    bars = ax.bar(resources, util_values, color='steelblue', edgecolor='darkred', linewidth=0.7)
+    ax.set_xlabel('Ресурс')
+    ax.set_ylabel('Исрользование ресурса')
+    ax.set_title('Относительное использование ресурсов')
     ax.set_ylim(0, 1)  # Utilization is a percentage between 0 and 1
     ax.tick_params(axis='x', rotation=45)
 
@@ -131,9 +131,9 @@ def plot_throughput_vs_wait(results_data: Union[Dict, List[Dict]], save_path: st
 
     fig, ax = plt.subplots(figsize=(10, 6))
     scatter = ax.scatter(wait_times, throughputs, c='mediumseagreen', s=100, alpha=0.7, edgecolors='black')
-    ax.set_xlabel('Average Wait Time (minutes)')
-    ax.set_ylabel('Absolute Throughput (passengers/hour)')
-    ax.set_title('Throughput vs. Wait Time Across Configurations')
+    ax.set_xlabel('Среднее ожидание (минуты)')
+    ax.set_ylabel('Абсолютная пропускная способность (пасс/час)')
+    ax.set_title('Пропускная способность и Ожидание')
     ax.grid(True, alpha=0.3)
 
     for i, label in enumerate(labels):
@@ -159,22 +159,22 @@ def plot_all_visualizations(results_file_path: str):
 
     print("Generating Average Wait Time plot...")
     plot_metric(data, 'avg_wait_time',
-                title=f'Average Wait Time by Configuration ({base_name})',
+                title=f'Среднее ожидание на конфигурацию',
                 save_path=os.path.join(output_dir, f"{base_name}_avg_wait_time.png"))
 
     print("Generating Absolute Throughput plot...")
     plot_metric(data, 'absolute_throughput',
-                title=f'Absolute Throughput by Configuration ({base_name})',
+                title=f'Абсолютная пропускная способность на конфигурацию',
                 save_path=os.path.join(output_dir, f"{base_name}_absolute_throughput.png"))
 
     print("Generating Relative Throughput plot...")
     plot_metric(data, 'relative_throughput',
-                title=f'Relative Throughput by Configuration ({base_name})',
+                title=f'Относительная пропускная способность на конфигурацию',
                 save_path=os.path.join(output_dir, f"{base_name}_relative_throughput.png"))
 
     print("Generating Average Passengers in System plot...")
     plot_metric(data, 'avg_passengers_in_system',
-                title=f'Average Passengers in System by Configuration ({base_name})',
+                title=f'Среднее число пассажиров в системе на конфигурацию',
                 save_path=os.path.join(output_dir, f"{base_name}_avg_passengers_in_system.png"))
 
     print("Generating Resource Utilization plot...")

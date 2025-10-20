@@ -1,32 +1,32 @@
 {
-  "max_time": 90,
-  "simulation_time": 480,
+  "max_time": 9999,
+  "simulation_time": 720,
   "initial_passengers": 100,
-  "passenger_arrival_rate": 0.2,
+  "passenger_arrival_rate": 0.02,
   "resources": {
-    "registration": 60,
-    "security": 30,
-    "customs": 20,
+    "registration": 200,
+    "security": 40,
+    "customs": 30,
     "duty_free": 20,
-    "restaurant": 50,
-    "toilet_before": 15,
-    "toilet_after": 15,
-    "boarding": 20
+    "restaurant": 1000,
+    "toilet_before": 30,
+    "toilet_after": 30,
+    "boarding": 40
   },
   "probabilities": {
-    "customs": 0.7,
+    "customs": 0.66,
     "duty_free": 0.1,
     "restaurant": 0.33,
     "toilet_before": 0.2,
     "toilet_after": 0.25
   },
   "service_times": {
-    "registration": [1.0, 2.0],
-    "security": [1.0, 5.0],
-    "customs": [1.0, 6.0],
-    "duty_free": [5.0, 15.0],
-    "restaurant": [10.0, 45.0],
+    "registration": [0.1, 3.0],
+    "security": [0.5, 1.0],
+    "customs": [0.2, 6.0],
+    "duty_free": [1.0, 5.0],
+    "restaurant": [10.0, 40.0],
     "toilet": [2.0, 5.0],
-    "boarding": [0.2, 2.0]
+    "boarding": [0.2, 1.0]
   }
 }
