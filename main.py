@@ -18,7 +18,7 @@ served_passengers = 0
 rejected_passengers = 0
 timeout_passengers = 0  # Пассажиры, ушедшие из-за таймаута
 
-MAX_WAIT_TIME = 120  # Максимальное время ожидания в минутах
+MAX_WAIT_TIME = 180  # Максимальное время ожидания в минутах
 
 
 class Airport(object):
@@ -41,19 +41,19 @@ class Airport(object):
         self.boarding_gate = simpy.Resource(env, num_boarding_gates)
 
     def register_passenger(self, passenger):
-        """Регистрация пассажира и багажа (1-3 мин + 1 мин за каждое место багажа)"""
+        """Регистрация пассажира и багажа (мин + 1 * каждое место багажа)"""
         num_bags = random.randint(0, 3)
-        service_time = random.uniform(1, 3) + num_bags * 1
+        service_time = random.uniform(1, 2) + num_bags * 1
         yield self.env.timeout(service_time)
 
     def check_security(self, passenger):
         """Проверка безопасности"""
-        service_time = random.uniform(2, 5)
+        service_time = random.uniform(1, 5)
         yield self.env.timeout(service_time)
 
     def check_customs(self, passenger):
         """Таможенная проверка"""
-        service_time = random.uniform(2, 6)
+        service_time = random.uniform(1, 6)
         yield self.env.timeout(service_time)
 
     def visit_duty_free(self, passenger):
@@ -85,7 +85,7 @@ def passenger_journey(env, passenger_id, airport):
     timed_out = False  # Флаг для отслеживания таймаута
 
     try:
-        # 1. Регистрация на рейс и сдача багажа (обязательно)
+        # Регистрация на рейс и сдача багажа (обязательно)
         reg_start = env.now
         with airport.registration.request() as request:
             # Ждем либо получения ресурса, либо истечения времени
@@ -100,7 +100,22 @@ def passenger_journey(env, passenger_id, airport):
             yield env.process(airport.register_passenger(passenger_id))
         service_stats['registration'].append(env.now - reg_start)
 
-        # 2. Проверка безопасности (обязательно)
+        # Посещение туалета
+        if random.random() < 0.2:
+            toilet_start = env.now
+            with airport.toilet_before.request() as request:
+                remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
+                if remaining_time <= 0:
+                    timed_out = True
+                    return
+                result = yield request | env.timeout(remaining_time)
+                if request not in result:
+                    timed_out = True
+                    return
+                yield env.process(airport.use_toilet(passenger_id))
+            service_stats['toilet'].append(env.now - toilet_start)
+
+        # Проверка безопасности (обязательно)
         sec_start = env.now
         with airport.security.request() as request:
             remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
@@ -114,7 +129,7 @@ def passenger_journey(env, passenger_id, airport):
             yield env.process(airport.check_security(passenger_id))
         service_stats['security'].append(env.now - sec_start)
 
-        # 3. Таможенная проверка для международных рейсов (70% пассажиров)
+        # Таможенная проверка для международных рейсов
         if random.random() < 0.7:
             cust_start = env.now
             with airport.customs.request() as request:
@@ -129,23 +144,8 @@ def passenger_journey(env, passenger_id, airport):
                 yield env.process(airport.check_customs(passenger_id))
             service_stats['customs'].append(env.now - cust_start)
 
-        # 4. Посещение туалета (30% пассажиров, в любой момент)
-        if random.random() < 0.3:
-            toilet_start = env.now
-            with airport.toilet_before.request() as request:
-                remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
-                if remaining_time <= 0:
-                    timed_out = True
-                    return
-                result = yield request | env.timeout(remaining_time)
-                if request not in result:
-                    timed_out = True
-                    return
-                yield env.process(airport.use_toilet(passenger_id))
-            service_stats['toilet'].append(env.now - toilet_start)
-
-        # 5. Покупки в Duty Free (20% пассажиров)
-        if random.random() < 0.2:
+        # Покупки в Duty Free
+        if random.random() < 0.1:
             df_start = env.now
             with airport.duty_free.request() as request:
                 remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
@@ -159,8 +159,8 @@ def passenger_journey(env, passenger_id, airport):
                 yield env.process(airport.visit_duty_free(passenger_id))
             service_stats['duty_free'].append(env.now - df_start)
 
-        # 6. Посещение ресторана (40% пассажиров)
-        if random.random() < 0.4:
+        # Посещение ресторана
+        if random.random() < 0.33:
             rest_start = env.now
             with airport.restaurant.request() as request:
                 remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
@@ -174,8 +174,8 @@ def passenger_journey(env, passenger_id, airport):
                 yield env.process(airport.use_restaurant(passenger_id))
             service_stats['restaurant'].append(env.now - rest_start)
 
-        # 7. Еще раз туалет перед посадкой (30% пассажиров)
-        if random.random() < 0.3:
+        # Еще раз туалет перед посадкой
+        if random.random() < 0.2:
             toilet_start = env.now
             with airport.toilet_after.request() as request:
                 remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
@@ -189,7 +189,7 @@ def passenger_journey(env, passenger_id, airport):
                 yield env.process(airport.use_toilet(passenger_id))
             service_stats['toilet'].append(env.now - toilet_start)
 
-        # 8. Посадка на рейс (обязательно)
+        # Посадка на рейс (обязательно)
         board_start = env.now
         with airport.boarding_gate.request() as request:
             remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
@@ -295,15 +295,15 @@ def get_user_input():
     print("(Нажмите Enter для значений по умолчанию)")
 
     try:
-        num_registration = input("Стойки регистрации [3]: ") or "3"
-        num_security = input("Пункты безопасности [4]: ") or "4"
-        num_customs = input("Таможенные службы [2]: ") or "2"
-        num_duty_free = input("Магазины Duty Free [2]: ") or "2"
-        num_restaurants = input("Рестораны [3]: ") or "3"
-        num_toilets_before = input("Туалеты до регистрации [3]: ") or "3"
-        num_toilets_after = input("Туалеты после регистрации [3]: ") or "3"
-        num_boarding_gates = input("Выходы на посадку [4]: ") or "4"
-        passenger_arrival_rate = input("Интервал прибытия пассажиров в мин [2.0]: ") or "2.0"
+        num_registration = input("Стойки регистрации [60]: ") or "60"
+        num_security = input("Пункты безопасности [30]: ") or "30"
+        num_customs = input("Таможенные службы [20]: ") or "20"
+        num_duty_free = input("Магазины Duty Free [20]: ") or "20"
+        num_restaurants = input("Рестораны [10]: ") or "10"
+        num_toilets_before = input("Туалеты до регистрации [10]: ") or "10"
+        num_toilets_after = input("Туалеты после регистрации [10]: ") or "10"
+        num_boarding_gates = input("Выходы на посадку [20]: ") or "20"
+        passenger_arrival_rate = input("Интервал прибытия пассажиров в мин [0.2]: ") or "0.2"
 
         params = [num_registration, num_security, num_customs, num_duty_free,
                   num_restaurants, num_toilets_before, num_toilets_after, num_boarding_gates, passenger_arrival_rate]
@@ -316,7 +316,7 @@ def get_user_input():
 
     except (ValueError, KeyboardInterrupt):
         print("\nИспользуются значения по умолчанию.")
-        return [3, 4, 2, 2, 3, 3, 3, 4, 2.0]
+        return [60, 30, 20, 20, 10, 10, 10, 20, 0.2]
 
 
 def main():
@@ -341,6 +341,7 @@ def main():
     print("\nЗапуск моделирования...")
     print(f"Максимальное время ожидания: {MAX_WAIT_TIME} минут")
     simulation_time = 480  # 8 часов работы аэропорта
+    print(f"Время симуляции: {simulation_time} минут ({simulation_time/60} часов)")
 
     env = simpy.Environment()
     airport = Airport(env, num_registration, num_security, num_customs,
@@ -360,17 +361,14 @@ def main():
             print(f"из-за превышения времени ожидания ({MAX_WAIT_TIME} мин)")
 
         if stats['utilization']:
-            bottlenecks = {k: v for k, v in stats['utilization'].items() if v > 0.8}
+            bottlenecks = {k: v for k, v in stats['utilization'].items() if v > 0.85}
             if bottlenecks:
-                print("\nУзкие места (загрузка > 80%):")
+                print("\nУзкие места (загрузка > 85%):")
                 for service, util in bottlenecks.items():
                     print(f"  - {service}: {util:.2%} → рекомендуется увеличить количество")
             else:
                 if stats['timeout_passengers'] == 0:
                     print("\nСистема работает эффективно, узких мест не обнаружено.")
-
-    print("=" * 60)
-
 
 if __name__ == "__main__":
     main()
