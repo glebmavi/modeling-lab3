@@ -4,7 +4,7 @@ import statistics
 from typing import List, Dict
 
 # Глобальные списки для хранения статистики
-wait_times = []  # Общее время ожидания пассажира в системе
+wait_times = []
 service_stats = {
     'registration': [],
     'security': [],
@@ -16,7 +16,7 @@ service_stats = {
 }
 served_passengers = 0
 rejected_passengers = 0
-timeout_passengers = 0  # Пассажиры, ушедшие из-за таймаута
+timeout_passengers = 0
 
 MAX_WAIT_TIME = 180  # Максимальное время ожидания в минутах
 
@@ -29,16 +29,25 @@ class Airport(object):
                  num_duty_free_cashiers, num_restaurant_tables,
                  num_toilets_before, num_toilets_after, num_boarding_gates):
         self.env = env
-        # Ресурсы аэропорта с отдельными агентами обслуживания
         self.registration = simpy.Resource(env, num_registration_agents)
         self.security = simpy.Resource(env, num_security_agents)
         self.customs = simpy.Resource(env, num_customs_agents)
-
         self.duty_free = simpy.Resource(env, num_duty_free_cashiers)
         self.restaurant = simpy.Resource(env, num_restaurant_tables)
         self.toilet_before = simpy.Resource(env, num_toilets_before)
         self.toilet_after = simpy.Resource(env, num_toilets_after)
         self.boarding_gate = simpy.Resource(env, num_boarding_gates)
+
+        # Сохраняем количество ресурсов для расчета утилизации
+        self.resource_counts = {
+            'registration': num_registration_agents,
+            'security': num_security_agents,
+            'customs': num_customs_agents,
+            'duty_free': num_duty_free_cashiers,
+            'restaurant': num_restaurant_tables,
+            'toilet': num_toilets_before + num_toilets_after,
+            'boarding': num_boarding_gates
+        }
 
     def register_passenger(self, passenger):
         """Регистрация пассажира и багажа (мин + 1 * каждое место багажа)"""
@@ -78,7 +87,7 @@ class Airport(object):
 
 
 def passenger_journey(env, passenger_id, airport):
-    """Процесс прохождения пассажира через аэропорт с контролем времени ожидания"""
+    """Процесс прохождения пассажира через аэропорт"""
     global served_passengers, rejected_passengers, timeout_passengers
 
     arrival_time = env.now
@@ -231,7 +240,7 @@ def run_airport(env, airport, passenger_arrival_rate):
         passenger_id += 1
 
 
-def calculate_statistics(wait_times, service_stats, simulation_time):
+def calculate_statistics(wait_times, service_stats, simulation_time, resource_counts):
     """Расчет статистики системы"""
     if not wait_times:
         return None
@@ -242,8 +251,9 @@ def calculate_statistics(wait_times, service_stats, simulation_time):
     # Коэффициент использования для каждого типа ресурса
     utilization = {}
     for service, times in service_stats.items():
-        if times:
-            utilization[service] = sum(times) / simulation_time
+        if times and service in resource_counts:
+            # Делим на количество ресурсов
+            utilization[service] = sum(times) / (simulation_time * resource_counts[service])
 
     # Абсолютная пропускная способность (пассажиров в час)
     absolute_throughput = (served_passengers / simulation_time) * 60
@@ -350,8 +360,8 @@ def main():
     env.process(run_airport(env, airport, passenger_arrival_rate))
     env.run(until=simulation_time)
 
-    # Расчет и вывод статистики
-    stats = calculate_statistics(wait_times, service_stats, simulation_time)
+    # Передаем resource_counts в функцию статистики
+    stats = calculate_statistics(wait_times, service_stats, simulation_time, airport.resource_counts)
     print_statistics(stats)
 
     if stats:
