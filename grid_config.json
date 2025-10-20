@@ -1,0 +1,4 @@
+{
+  "passenger_arrival_rate": [0.01, 0.1, 0.2, 0.5],
+  "registration": [20, 60, 100]
+}

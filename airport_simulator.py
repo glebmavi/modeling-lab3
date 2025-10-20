@@ -17,15 +17,6 @@ def run_simulation_with_params(params: Dict[str, Any]):
     Запуск симуляции с заданными параметрами.
     """
     wait_times = []
-    service_stats = {
-        'registration': [],
-        'security': [],
-        'customs': [],
-        'duty_free': [],
-        'restaurant': [],
-        'toilet': [],
-        'boarding': []
-    }
     served_passengers = 0
     rejected_passengers = 0
     timeout_passengers = 0
@@ -80,6 +71,17 @@ def run_simulation_with_params(params: Dict[str, Any]):
             self.toilet_after = simpy.Resource(env, num_toilets_after)
             self.boarding_gate = simpy.Resource(env, num_boarding_gates)
 
+            # Сохраняем объекты ресурсов для расчета утилизации
+            self.resources = {
+                'registration': self.registration,
+                'security': self.security,
+                'customs': self.customs,
+                'duty_free': self.duty_free,
+                'restaurant': self.restaurant,
+                'toilet': (self.toilet_before, self.toilet_after),
+                'boarding': self.boarding_gate
+            }
+
             # Сохраняем количество ресурсов для расчета утилизации
             self.resource_counts = {
                 'registration': num_registration_agents,
@@ -127,8 +129,18 @@ def run_simulation_with_params(params: Dict[str, Any]):
             service_time = random.uniform(*boarding_time)
             yield self.env.timeout(service_time)
 
+    service_durations = {
+        'registration': [],
+        'security': [],
+        'customs': [],
+        'duty_free': [],
+        'restaurant': [],
+        'toilet': [], # Combined
+        'boarding': []
+    }
+
     def passenger_journey(env, passenger_id, airport):
-        """Процесс прохождения пассажира через аэропорт"""
+        """Процесс прохождения пассажира через аэропорт с отслеживанием длительности обслуживания"""
         nonlocal served_passengers, rejected_passengers, timeout_passengers
 
         arrival_time = env.now
@@ -136,9 +148,7 @@ def run_simulation_with_params(params: Dict[str, Any]):
 
         try:
             # Регистрация на рейс и сдача багажа (обязательно)
-            reg_start = env.now
             with airport.registration.request() as request:
-                # Ждем либо получения ресурса, либо истечения времени
                 remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
                 if remaining_time <= 0:
                     timed_out = True
@@ -147,12 +157,13 @@ def run_simulation_with_params(params: Dict[str, Any]):
                 if request not in result:
                     timed_out = True
                     return
+                start_time = env.now
                 yield env.process(airport.register_passenger(passenger_id))
-            service_stats['registration'].append(env.now - reg_start)
+                duration = env.now - start_time
+                service_durations['registration'].append(duration)
 
             # Посещение туалета
             if random.random() < prob_toilet_before:
-                toilet_start = env.now
                 with airport.toilet_before.request() as request:
                     remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
                     if remaining_time <= 0:
@@ -162,11 +173,12 @@ def run_simulation_with_params(params: Dict[str, Any]):
                     if request not in result:
                         timed_out = True
                         return
+                    start_time = env.now
                     yield env.process(airport.use_toilet(passenger_id))
-                service_stats['toilet'].append(env.now - toilet_start)
+                    duration = env.now - start_time
+                    service_durations['toilet'].append(duration)
 
             # Проверка безопасности (обязательно)
-            sec_start = env.now
             with airport.security.request() as request:
                 remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
                 if remaining_time <= 0:
@@ -176,12 +188,13 @@ def run_simulation_with_params(params: Dict[str, Any]):
                 if request not in result:
                     timed_out = True
                     return
+                start_time = env.now
                 yield env.process(airport.check_security(passenger_id))
-            service_stats['security'].append(env.now - sec_start)
+                duration = env.now - start_time
+                service_durations['security'].append(duration)
 
             # Таможенная проверка для международных рейсов
             if random.random() < prob_customs:
-                cust_start = env.now
                 with airport.customs.request() as request:
                     remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
                     if remaining_time <= 0:
@@ -191,12 +204,13 @@ def run_simulation_with_params(params: Dict[str, Any]):
                     if request not in result:
                         timed_out = True
                         return
+                    start_time = env.now
                     yield env.process(airport.check_customs(passenger_id))
-                service_stats['customs'].append(env.now - cust_start)
+                    duration = env.now - start_time
+                    service_durations['customs'].append(duration)
 
             # Покупки в Duty Free
             if random.random() < prob_duty_free:
-                df_start = env.now
                 with airport.duty_free.request() as request:
                     remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
                     if remaining_time <= 0:
@@ -206,12 +220,13 @@ def run_simulation_with_params(params: Dict[str, Any]):
                     if request not in result:
                         timed_out = True
                         return
+                    start_time = env.now
                     yield env.process(airport.visit_duty_free(passenger_id))
-                service_stats['duty_free'].append(env.now - df_start)
+                    duration = env.now - start_time
+                    service_durations['duty_free'].append(duration)
 
             # Посещение ресторана
             if random.random() < prob_restaurant:
-                rest_start = env.now
                 with airport.restaurant.request() as request:
                     remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
                     if remaining_time <= 0:
@@ -221,12 +236,13 @@ def run_simulation_with_params(params: Dict[str, Any]):
                     if request not in result:
                         timed_out = True
                         return
+                    start_time = env.now
                     yield env.process(airport.use_restaurant(passenger_id))
-                service_stats['restaurant'].append(env.now - rest_start)
+                    duration = env.now - start_time
+                    service_durations['restaurant'].append(duration)
 
             # Еще раз туалет перед посадкой
             if random.random() < prob_toilet_after:
-                toilet_start = env.now
                 with airport.toilet_after.request() as request:
                     remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
                     if remaining_time <= 0:
@@ -236,11 +252,12 @@ def run_simulation_with_params(params: Dict[str, Any]):
                     if request not in result:
                         timed_out = True
                         return
+                    start_time = env.now
                     yield env.process(airport.use_toilet(passenger_id))
-                service_stats['toilet'].append(env.now - toilet_start)
+                    duration = env.now - start_time
+                    service_durations['toilet'].append(duration)
 
             # Посадка на рейс (обязательно)
-            board_start = env.now
             with airport.boarding_gate.request() as request:
                 remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
                 if remaining_time <= 0:
@@ -250,8 +267,10 @@ def run_simulation_with_params(params: Dict[str, Any]):
                 if request not in result:
                     timed_out = True
                     return
+                start_time = env.now
                 yield env.process(airport.board_flight(passenger_id))
-            service_stats['boarding'].append(env.now - board_start)
+                duration = env.now - start_time
+                service_durations['boarding'].append(duration)
 
             # Сохраняем общее время пребывания пассажира в аэропорту
             total_time = env.now - arrival_time
@@ -280,8 +299,8 @@ def run_simulation_with_params(params: Dict[str, Any]):
             env.process(passenger_journey(env, passenger_id, airport))
             passenger_id += 1
 
-    def calculate_statistics(wait_times, service_stats, simulation_time, resource_counts):
-        """Расчет статистики системы"""
+    def calculate_statistics(wait_times, service_durations, simulation_time, resource_counts):
+        """Расчет статистики системы с корректной утилизацией"""
         if not wait_times:
             return None
 
@@ -290,10 +309,13 @@ def run_simulation_with_params(params: Dict[str, Any]):
 
         # Коэффициент использования для каждого типа ресурса
         utilization = {}
-        for service, times in service_stats.items():
-            if times and service in resource_counts:
-                # Делим на количество ресурсов
-                utilization[service] = sum(times) / (simulation_time * resource_counts[service])
+        for service, durations in service_durations.items():
+            if service in resource_counts:
+                total_service_time = sum(durations)
+                total_possible_time = simulation_time * resource_counts[service]
+                utilization[service] = total_service_time / total_possible_time if total_possible_time > 0 else 0.0
+            else:
+                utilization[service] = 0.0
 
         # Абсолютная пропускная способность (пассажиров в час)
         absolute_throughput = (served_passengers / simulation_time) * 60
@@ -320,7 +342,7 @@ def run_simulation_with_params(params: Dict[str, Any]):
     env.process(run_airport(env, airport, passenger_arrival_rate))
     env.run(until=SIMULATION_TIME)
 
-    stats = calculate_statistics(wait_times, service_stats, SIMULATION_TIME, airport.resource_counts)
+    stats = calculate_statistics(wait_times, service_durations, SIMULATION_TIME, airport.resource_counts)
     return stats, params
 
 
