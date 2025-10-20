@@ -1,0 +1,66 @@
+[
+  {
+    "max_time": 90,
+    "simulation_time": 480,
+    "initial_passengers": 100,
+    "passenger_arrival_rate": 0.2,
+    "resources": {
+      "registration": 60,
+      "security": 30,
+      "customs": 20,
+      "duty_free": 20,
+      "restaurant": 50,
+      "toilet_before": 15,
+      "toilet_after": 15,
+      "boarding": 20
+    },
+    "probabilities": {
+      "customs": 0.7,
+      "duty_free": 0.1,
+      "restaurant": 0.33,
+      "toilet_before": 0.2,
+      "toilet_after": 0.25
+    },
+    "service_times": {
+      "registration": [1.0, 2.0],
+      "security": [1.0, 5.0],
+      "customs": [1.0, 6.0],
+      "duty_free": [5.0, 15.0],
+      "restaurant": [10.0, 45.0],
+      "toilet": [2.0, 5.0],
+      "boarding": [0.2, 2.0]
+    }
+  },
+  {
+    "max_time": 120,
+    "simulation_time": 480,
+    "initial_passengers": 100,
+    "passenger_arrival_rate": 0.2,
+    "resources": {
+      "registration": 60,
+      "security": 30,
+      "customs": 20,
+      "duty_free": 20,
+      "restaurant": 100,
+      "toilet_before": 15,
+      "toilet_after": 15,
+      "boarding": 30
+    },
+    "probabilities": {
+      "customs": 0.7,
+      "duty_free": 0.1,
+      "restaurant": 0.33,
+      "toilet_before": 0.2,
+      "toilet_after": 0.25
+    },
+    "service_times": {
+      "registration": [1.0, 2.0],
+      "security": [1.0, 5.0],
+      "customs": [1.0, 6.0],
+      "duty_free": [5.0, 15.0],
+      "restaurant": [10.0, 45.0],
+      "toilet": [2.0, 5.0],
+      "boarding": [0.2, 2.0]
+    }
+  }
+]
