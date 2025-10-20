@@ -96,7 +96,7 @@ def plot_resource_utilization(results_data: Union[Dict, List[Dict]], diff_parame
         util = stats['utilization']
         all_util_data.append(util)
         # Create a label based on parameters if available (e.g., arrival rate)
-        arrival_rate = result.get('parameters', {}).get(diff_parameter, f"Run {i+1}")
+        arrival_rate = result.get('parameters', {}).get(diff_parameter, f"Config {i+1}")
         labels.append(f"{arrival_rate}")
 
     if not all_util_data:
@@ -185,6 +185,16 @@ def plot_throughput_vs_wait(results_data: Union[Dict, List[Dict]], save_path: st
         print(f"Plot saved to {save_path}")
     plt.show()
 
+def list_all_configs(results_data: Union[Dict, List[Dict]]):
+    configs = []
+
+    if isinstance(results_data, list):
+        for i, item in enumerate(results_data):
+            configs.append(f"Config {i+1}: {json.dumps(item['parameters'])}")
+
+    for conf in configs:
+        print(conf)
+
 
 def plot_all_visualizations(results_file_path: str):
     """Generate all visualizations for the given results file."""
@@ -216,12 +226,14 @@ def plot_all_visualizations(results_file_path: str):
                 save_path=os.path.join(output_dir, f"{base_name}_avg_passengers_in_system.png"))
 
     print("Generating Resource Utilization plot...")
-    plot_resource_utilization(data,  diff_parameter='passenger_arrival_rate',
+    plot_resource_utilization(data,  diff_parameter='',
                               save_path=os.path.join(output_dir, f"{base_name}_utilization.png"))
 
     print("Generating Throughput vs. Wait Time scatter plot...")
     plot_throughput_vs_wait(data,
                             save_path=os.path.join(output_dir, f"{base_name}_throughput_vs_wait.png"))
+
+    list_all_configs(data)
 
     print("\nAll visualizations have been generated and saved.")
 
