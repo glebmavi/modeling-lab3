@@ -1,5 +1,13 @@
 {
   "resources": {
-    "customs": [10, 30, 100, 300]
-  }
+    "customs": [120],
+    "security": [40],
+    "toilet_before": [35],
+    "toilet_after": [45],
+    "registration": [180],
+    "restaurant": [500],
+    "duty_free": [18],
+    "boarding": [35]
+  },
+  "passenger_arrival_rate": 0.02
 }
