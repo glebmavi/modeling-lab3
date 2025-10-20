@@ -16,6 +16,9 @@ service_stats = {
 }
 served_passengers = 0
 rejected_passengers = 0
+timeout_passengers = 0  # Пассажиры, ушедшие из-за таймаута
+
+MAX_WAIT_TIME = 120  # Максимальное время ожидания в минутах
 
 
 class Airport(object):
@@ -75,23 +78,39 @@ class Airport(object):
 
 
 def passenger_journey(env, passenger_id, airport):
-    """Процесс прохождения пассажира через аэропорт"""
-    global served_passengers, rejected_passengers
+    """Процесс прохождения пассажира через аэропорт с контролем времени ожидания"""
+    global served_passengers, rejected_passengers, timeout_passengers
 
     arrival_time = env.now
+    timed_out = False  # Флаг для отслеживания таймаута
 
     try:
         # 1. Регистрация на рейс и сдача багажа (обязательно)
         reg_start = env.now
         with airport.registration.request() as request:
-            yield request
+            # Ждем либо получения ресурса, либо истечения времени
+            remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
+            if remaining_time <= 0:
+                timed_out = True
+                return
+            result = yield request | env.timeout(remaining_time)
+            if request not in result:
+                timed_out = True
+                return
             yield env.process(airport.register_passenger(passenger_id))
         service_stats['registration'].append(env.now - reg_start)
 
         # 2. Проверка безопасности (обязательно)
         sec_start = env.now
         with airport.security.request() as request:
-            yield request
+            remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
+            if remaining_time <= 0:
+                timed_out = True
+                return
+            result = yield request | env.timeout(remaining_time)
+            if request not in result:
+                timed_out = True
+                return
             yield env.process(airport.check_security(passenger_id))
         service_stats['security'].append(env.now - sec_start)
 
@@ -99,7 +118,14 @@ def passenger_journey(env, passenger_id, airport):
         if random.random() < 0.7:
             cust_start = env.now
             with airport.customs.request() as request:
-                yield request
+                remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
+                if remaining_time <= 0:
+                    timed_out = True
+                    return
+                result = yield request | env.timeout(remaining_time)
+                if request not in result:
+                    timed_out = True
+                    return
                 yield env.process(airport.check_customs(passenger_id))
             service_stats['customs'].append(env.now - cust_start)
 
@@ -107,7 +133,14 @@ def passenger_journey(env, passenger_id, airport):
         if random.random() < 0.3:
             toilet_start = env.now
             with airport.toilet_before.request() as request:
-                yield request
+                remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
+                if remaining_time <= 0:
+                    timed_out = True
+                    return
+                result = yield request | env.timeout(remaining_time)
+                if request not in result:
+                    timed_out = True
+                    return
                 yield env.process(airport.use_toilet(passenger_id))
             service_stats['toilet'].append(env.now - toilet_start)
 
@@ -115,7 +148,14 @@ def passenger_journey(env, passenger_id, airport):
         if random.random() < 0.2:
             df_start = env.now
             with airport.duty_free.request() as request:
-                yield request
+                remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
+                if remaining_time <= 0:
+                    timed_out = True
+                    return
+                result = yield request | env.timeout(remaining_time)
+                if request not in result:
+                    timed_out = True
+                    return
                 yield env.process(airport.visit_duty_free(passenger_id))
             service_stats['duty_free'].append(env.now - df_start)
 
@@ -123,7 +163,14 @@ def passenger_journey(env, passenger_id, airport):
         if random.random() < 0.4:
             rest_start = env.now
             with airport.restaurant.request() as request:
-                yield request
+                remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
+                if remaining_time <= 0:
+                    timed_out = True
+                    return
+                result = yield request | env.timeout(remaining_time)
+                if request not in result:
+                    timed_out = True
+                    return
                 yield env.process(airport.use_restaurant(passenger_id))
             service_stats['restaurant'].append(env.now - rest_start)
 
@@ -131,14 +178,28 @@ def passenger_journey(env, passenger_id, airport):
         if random.random() < 0.3:
             toilet_start = env.now
             with airport.toilet_after.request() as request:
-                yield request
+                remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
+                if remaining_time <= 0:
+                    timed_out = True
+                    return
+                result = yield request | env.timeout(remaining_time)
+                if request not in result:
+                    timed_out = True
+                    return
                 yield env.process(airport.use_toilet(passenger_id))
             service_stats['toilet'].append(env.now - toilet_start)
 
         # 8. Посадка на рейс (обязательно)
         board_start = env.now
         with airport.boarding_gate.request() as request:
-            yield request
+            remaining_time = MAX_WAIT_TIME - (env.now - arrival_time)
+            if remaining_time <= 0:
+                timed_out = True
+                return
+            result = yield request | env.timeout(remaining_time)
+            if request not in result:
+                timed_out = True
+                return
             yield env.process(airport.board_flight(passenger_id))
         service_stats['boarding'].append(env.now - board_start)
 
@@ -147,8 +208,11 @@ def passenger_journey(env, passenger_id, airport):
         wait_times.append(total_time)
         served_passengers += 1
 
-    except simpy.Interrupt:
-        rejected_passengers += 1
+    finally:
+        # Обработка таймаута
+        if timed_out:
+            timeout_passengers += 1
+            rejected_passengers += 1
 
 
 def run_airport(env, airport, passenger_arrival_rate):
@@ -195,7 +259,8 @@ def calculate_statistics(wait_times, service_stats, simulation_time):
         'absolute_throughput': absolute_throughput,
         'relative_throughput': relative_throughput,
         'served_passengers': served_passengers,
-        'rejected_passengers': rejected_passengers
+        'rejected_passengers': rejected_passengers,
+        'timeout_passengers': timeout_passengers
     }
 
 
@@ -215,6 +280,7 @@ def print_statistics(stats):
     print(f"Среднее число пассажиров в системе: {stats['avg_passengers_in_system']:.2f}")
     print(f"Обслужено пассажиров: {stats['served_passengers']}")
     print(f"Не обслужено пассажиров: {stats['rejected_passengers']}")
+    print(f"  - из них ушедших по таймауту (>{MAX_WAIT_TIME} мин): {stats['timeout_passengers']}")
     print(f"\nАбсолютная пропускная способность: {stats['absolute_throughput']:.2f} пасс/час")
     print(f"Относительная пропускная способность: {stats['relative_throughput']:.2%}")
 
@@ -255,13 +321,14 @@ def get_user_input():
 
 def main():
     """Главная функция"""
-    global wait_times, service_stats, served_passengers, rejected_passengers
+    global wait_times, service_stats, served_passengers, rejected_passengers, timeout_passengers
 
     # Сброс глобальных переменных
     wait_times = []
     service_stats = {k: [] for k in service_stats.keys()}
     served_passengers = 0
     rejected_passengers = 0
+    timeout_passengers = 0
 
     random.seed(42)
 
@@ -272,6 +339,7 @@ def main():
 
     # Создание среды и запуск моделирования
     print("\nЗапуск моделирования...")
+    print(f"Максимальное время ожидания: {MAX_WAIT_TIME} минут")
     simulation_time = 480  # 8 часов работы аэропорта
 
     env = simpy.Environment()
@@ -285,19 +353,21 @@ def main():
     stats = calculate_statistics(wait_times, service_stats, simulation_time)
     print_statistics(stats)
 
-    # Рекомендации по оптимизации
-    print("\n" + "=" * 60)
-    print("РЕКОМЕНДАЦИИ ПО ОПТИМИЗАЦИИ")
-    print("=" * 60)
+    if stats:
+        if stats['timeout_passengers'] > 0:
+            timeout_rate = stats['timeout_passengers'] / (stats['served_passengers'] + stats['rejected_passengers'])
+            print(f"\n{timeout_rate:.1%} пассажиров покинули аэропорт")
+            print(f"из-за превышения времени ожидания ({MAX_WAIT_TIME} мин)")
 
-    if stats and stats['utilization']:
-        bottlenecks = {k: v for k, v in stats['utilization'].items() if v > 0.8}
-        if bottlenecks:
-            print("\nУзкие места (загрузка > 80%):")
-            for service, util in bottlenecks.items():
-                print(f"  - {service}: {util:.2%} → рекомендуется увеличить количество")
-        else:
-            print("\nСистема работает эффективно, узких мест не обнаружено.")
+        if stats['utilization']:
+            bottlenecks = {k: v for k, v in stats['utilization'].items() if v > 0.8}
+            if bottlenecks:
+                print("\nУзкие места (загрузка > 80%):")
+                for service, util in bottlenecks.items():
+                    print(f"  - {service}: {util:.2%} → рекомендуется увеличить количество")
+            else:
+                if stats['timeout_passengers'] == 0:
+                    print("\nСистема работает эффективно, узких мест не обнаружено.")
 
     print("=" * 60)
 
