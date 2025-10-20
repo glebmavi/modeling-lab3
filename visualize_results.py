@@ -225,6 +225,16 @@ def plot_all_visualizations(results_file_path: str):
                 title=f'Среднее число пассажиров в системе на конфигурацию',
                 save_path=os.path.join(output_dir, f"{base_name}_avg_passengers_in_system.png"))
 
+    print("Generating Generated Passengers plot...")
+    plot_metric(data, 'generated_passengers',
+                title='Общее количество сгенерированных пассажиров по конфигурациям',
+                save_path=os.path.join(output_dir, f"{base_name}_generated_passengers.png"))
+
+    print("Generating Served Ratio plot...")
+    plot_metric(data, 'served_ratio',
+                title='Доля обслуженных пассажиров (served / generated)',
+                save_path=os.path.join(output_dir, f"{base_name}_served_ratio.png"))
+
     print("Generating Resource Utilization plot...")
     plot_resource_utilization(data,  diff_parameter='',
                               save_path=os.path.join(output_dir, f"{base_name}_utilization.png"))
