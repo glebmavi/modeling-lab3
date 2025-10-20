@@ -17,6 +17,7 @@ def run_simulation_with_params(params: Dict[str, Any]):
     Запуск симуляции с заданными параметрами.
     """
     wait_times = []
+    total_generated_passengers = 0
     served_passengers = 0
     rejected_passengers = 0
     timeout_passengers = 0
@@ -285,10 +286,12 @@ def run_simulation_with_params(params: Dict[str, Any]):
 
     def run_airport(env, airport, passenger_arrival_rate):
         """Генерация потока пассажиров"""
+        nonlocal total_generated_passengers
         passenger_id = 0
 
         # Первоначально несколько пассажиров уже в аэропорту
         for i in range(INITIAL_PASSENGERS):
+            total_generated_passengers += 1
             env.process(passenger_journey(env, passenger_id, airport))
             passenger_id += 1
 
@@ -296,6 +299,7 @@ def run_simulation_with_params(params: Dict[str, Any]):
         while True:
             yield env.timeout(random.expovariate(
                 1.0 / passenger_arrival_rate))  # каждые passenger_arrival_rate минут приходит пассажир
+            total_generated_passengers += 1
             env.process(passenger_journey(env, passenger_id, airport))
             passenger_id += 1
 
@@ -324,12 +328,17 @@ def run_simulation_with_params(params: Dict[str, Any]):
         total_passengers = served_passengers + rejected_passengers
         relative_throughput = served_passengers / total_passengers if total_passengers > 0 else 0
 
+        # Отношение обработанных пассажиров
+        served_ratio = served_passengers / total_generated_passengers if total_generated_passengers > 0 else 0
+
         return {
             'avg_wait_time': avg_wait_time,
             'avg_passengers_in_system': avg_passengers_in_system,
             'utilization': utilization,
             'absolute_throughput': absolute_throughput,
             'relative_throughput': relative_throughput,
+            'generated_passengers': total_generated_passengers,
+            'served_ratio': served_ratio,
             'served_passengers': served_passengers,
             'rejected_passengers': rejected_passengers,
             'timeout_passengers': timeout_passengers
@@ -346,17 +355,45 @@ def run_simulation_with_params(params: Dict[str, Any]):
     return stats, params
 
 
+def _flatten_grid_config(d: Dict, parent_key: str = '') -> Dict[str, List | int]:
+    """Flatten a nested grid config into dot-notation keys."""
+    items = []
+    for k, v in d.items():
+        new_key = f"{parent_key}.{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(_flatten_grid_config(v, new_key).items())
+        else:
+            # v should be a list of values
+            if not isinstance(v, list) and not isinstance(v, int):
+                raise ValueError(f"Grid value must be a list: {new_key} = {v} or int")
+            items.append((new_key, v))
+    return dict(items)
+
+def _set_nested_value(d: Dict, key_path: str, value: Any) -> None:
+    """
+    Set a value in a nested dict using a dot-separated key path.
+    """
+    keys = key_path.split(".")
+    for key in keys[:-1]:
+        d = d.setdefault(key, {})
+    d[keys[-1]] = value
+
+
 def generate_grid_search_params(base_params: Dict[str, Any], grid_params: Dict[str, List]) -> List[Dict[str, Any]]:
     """
     Генерирует список параметров для grid search на базе base_config.
     """
+    if not grid_params:
+        return [json.loads(json.dumps(base_params))]  # deep copy
+
     keys, values = zip(*grid_params.items())
     combinations = [dict(zip(keys, v)) for v in itertools.product(*values)]
 
     param_list = []
     for combo in combinations:
-        params = json.loads(json.dumps(base_params))  # копия
-        _update_params_recursive(params, combo)
+        params = json.loads(json.dumps(base_params))  # deep copy via JSON
+        for key_path, value in combo.items():
+            _set_nested_value(params, key_path, value)
         param_list.append(params)
 
     return param_list
@@ -367,7 +404,7 @@ def _update_params_recursive(target: Dict, updates: Dict):
     Обновляет параметры для заданного dict.
     """
     for key, value in updates.items():
-        if key in target and isinstance(target[key], dict) and isinstance(value, dict):
+        if key in target and isinstance(target[key], dict) and isinstance(value, str):
             _update_params_recursive(target[key], value)
         else:
             target[key] = value
@@ -381,7 +418,7 @@ def run_grid_search(base_config_path: str, grid_config_path: str, num_runs_per_c
     base_params = load_params_from_json(base_config_path)
     grid_params = load_params_from_json(grid_config_path)
 
-    param_combinations = generate_grid_search_params(base_params, grid_params)
+    param_combinations = generate_grid_search_params(base_params, _flatten_grid_config(grid_params))
     results = []
     total_configs = len(param_combinations)
     print(f"Запуск grid search с {total_configs} настройками...")
