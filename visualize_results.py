@@ -70,39 +70,77 @@ def plot_metric(results_data: Union[Dict, List[Dict]], metric: str, title: str =
     plt.show()
 
 
-def plot_resource_utilization(results_data: Union[Dict, List[Dict]], save_path: str = None):
-    """Plot resource utilization for the first result set in the data."""
-    stats = None
-    if isinstance(results_data, list) and len(results_data) > 0:
-        first_result = results_data[0]
-        stats = first_result.get('averaged_statistics') or first_result.get('statistics')
-    elif isinstance(results_data, dict):
-        stats = results_data.get('statistics')  # For a single result dict
+def plot_resource_utilization(results_data: Union[Dict, List[Dict]], diff_parameter: str, save_path: str = None):
+    """
+    Plot resource utilization for all result sets in the data.
+    Each result set is shown as a group of bars (one per resource).
+    """
+    # Normalize input to always be a list
+    if isinstance(results_data, dict):
+        results_data = [results_data]
 
-    if not stats or 'utilization' not in stats:
-        print("No utilization data found in the results. Skipping utilization plot.")
+    if not results_data:
+        print("No results data provided. Skipping plot.")
         return
 
-    util_data = stats['utilization']
-    resources = list(util_data.keys())
-    util_values = [util_data[res] for res in resources]
+    # Extract utilization data from each result
+    all_util_data = []
+    labels = []
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    bars = ax.bar(resources, util_values, color='steelblue', edgecolor='darkred', linewidth=0.7)
+    for i, result in enumerate(results_data):
+        stats = result.get('averaged_statistics') or result.get('statistics')
+        if not stats or 'utilization' not in stats:
+            print(f"Skipping result {i+1}: no utilization data found.")
+            continue
+
+        util = stats['utilization']
+        all_util_data.append(util)
+        # Create a label based on parameters if available (e.g., arrival rate)
+        arrival_rate = result.get('parameters', {}).get(diff_parameter, f"Run {i+1}")
+        labels.append(f"{arrival_rate}")
+
+    if not all_util_data:
+        print("No valid utilization data found in any result. Skipping plot.")
+        return
+
+    # Ensure all util dicts have the same keys (resources)
+    resources = list(all_util_data[0].keys())
+    for util in all_util_data:
+        if set(util.keys()) != set(resources):
+            raise ValueError("All results must have the same set of resources for consistent plotting.")
+
+    # Prepare data for plotting
+    n_results = len(all_util_data)
+    n_resources = len(resources)
+    x = range(n_resources)
+    width = 0.8 / n_results  # Total width < 0.8 to leave space between groups
+
+    fig, ax = plt.subplots(figsize=(12, 7))
+
+    for i, util in enumerate(all_util_data):
+        util_values = [util[res] for res in resources]
+        offset = (i - n_results / 2) * width + width / 2
+        bars = ax.bar([xi + offset for xi in x], util_values, width=width, label=labels[i])
+
+        # Add value labels on top of bars
+        for bar, value in zip(bars, util_values):
+            height = bar.get_height()
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                height + 0.01,
+                f'{value:.0%}',
+                ha='center', va='bottom', fontsize=8
+            )
+
     ax.set_xlabel('Ресурс')
-    ax.set_ylabel('Исрользование ресурса')
-    ax.set_title('Относительное использование ресурсов')
-    ax.set_ylim(0, 1)  # Utilization is a percentage between 0 and 1
-    ax.tick_params(axis='x', rotation=45)
+    ax.set_ylabel('Использование ресурса')
+    ax.set_title('Относительное использование ресурсов по разным сценариям')
+    ax.set_ylim(0, 1.1)
+    ax.set_xticks(x)
+    ax.set_xticklabels(resources, rotation=45, ha='right')
+    ax.legend(title="Сценарии")
+    ax.grid(axis='y', alpha=0.3)
 
-    # Add value labels on bars
-    for bar, value in zip(bars, util_values):
-        height = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width() / 2., height + 0.01,
-                f'{value:.2%}',
-                ha='center', va='bottom', fontsize=9)
-
-    plt.grid(axis='y', linestyle='--', alpha=0.7)
     plt.tight_layout()
 
     if save_path:
@@ -178,7 +216,7 @@ def plot_all_visualizations(results_file_path: str):
                 save_path=os.path.join(output_dir, f"{base_name}_avg_passengers_in_system.png"))
 
     print("Generating Resource Utilization plot...")
-    plot_resource_utilization(data,
+    plot_resource_utilization(data,  diff_parameter='passenger_arrival_rate',
                               save_path=os.path.join(output_dir, f"{base_name}_utilization.png"))
 
     print("Generating Throughput vs. Wait Time scatter plot...")
