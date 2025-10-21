@@ -364,9 +364,12 @@ def _flatten_grid_config(d: Dict, parent_key: str = '') -> Dict[str, List | int]
             items.extend(_flatten_grid_config(v, new_key).items())
         else:
             # v should be a list of values
-            if not isinstance(v, list) and not isinstance(v, int):
+            if not isinstance(v, list) and not isinstance(v, int) and not isinstance(v, float):
                 raise ValueError(f"Grid value must be a list: {new_key} = {v} or int")
-            items.append((new_key, v))
+            if isinstance(v, int) or isinstance(v, float):
+                items.append((new_key, [v]))
+            else:
+                items.append((new_key, v))
     return dict(items)
 
 def _set_nested_value(d: Dict, key_path: str, value: Any) -> None:
